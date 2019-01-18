@@ -1,3 +1,6 @@
+# Change / Plan
+[Changes / Plans](ChangePlan.md)
+
 # Minimig-AGA_MiSTer
 
 This is a port of the minimig core to the [MiSTer board](https://github.com/MiSTer-devel).
