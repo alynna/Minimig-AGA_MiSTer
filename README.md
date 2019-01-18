@@ -1,5 +1,5 @@
 # Change / Plan
-[Changes / Plans](ChangePlan)
+[Changes / Plans](ChangePlan.md)
 
 # Minimig-AGA_MiSTer
 
