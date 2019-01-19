@@ -280,7 +280,7 @@ PROCESS (clk) BEGIN -- Autoconfig board configure section
    -- Configure new boards in this section.  Up to 7 boards supported.
 	-- (Alynna rewrote this section to act more like a real Amiga Buster chip)
 	-- http://amigadev.elowar.com/read/ADCD_2.1/Hardware_Manual_guide/node02C8.html
-	IF sel_autoconfig='1' THEN -- Speed up everything, skip this logic if not sel_autoconfig
+	IF sel_autoconfig='1' AND autoconfig_out/="000" THEN -- Speed up everything, skip this logic if not sel_autoconfig
 		CASE autoconfig_out IS
 			WHEN "001" =>
 				IF fastramcfg/="000" THEN
@@ -354,6 +354,7 @@ PROCESS (clk) BEGIN -- Autoconfig action section
 			z3xram_base<=X"10";
 		ELSIF enaWRreg='1' THEN
 			IF sel_autoconfig='1' AND state="11" AND uds_in='0' AND clkena='1' AND autoconfig_out/="000" THEN
+				turbochip_ena <= '1'; -- enable turbo_chipram once kickstart is running
 				CASE cpuaddr(6 downto 1) IS
 					---- Some docs here.   When adding a Z2 board you MUST configure and increment the board in
 					---- register 48.  If its a Z2 board it will NOT attempt to read register 44.  In general you
@@ -368,17 +369,18 @@ PROCESS (clk) BEGIN -- Autoconfig action section
 								autoconfig_out <= autoconfig_out + 1;
 							WHEN "010" => null; -- Do not increment board # for Z3 boards,
 							WHEN "011" => null; -- must be done in register 0x44.
-							WHEN OTHERS => autoconfig_out <= autoconfig_out + 1;
+							WHEN OTHERS => null;
 						END CASE;
 					---- When adding a Z3 board you MUST configure and increment the board in register 44.
 					---- Z3 boards will access register 48 but not be configured until register 44 is hit. 
 					---- You will receive a location that your board is being moved to.  Store it.
+					---- Put autoconfig_out <= "111" on the last board unless the last board IS "111";
 					WHEN "100010" => 	-- Register 0x44, config z3 board data area
 						CASE autoconfig_out IS
 						-- Board 2 - Z3 SDRAM
 							WHEN "010" => IF fastramcfg(2)='1' THEN z3ram_ena <= '1'; z3ram_base<=data_write(15 downto 8); END IF; 
 						-- Board 3 - Z3 DDR3
-							WHEN "011" => z3xram_ena <= '1'; z3xram_base<=data_write(15 downto 8);
+							WHEN "011" => z3xram_ena <= '1'; z3xram_base<=data_write(15 downto 8);  autoconfig_out<="111";
 						-- Board 4 - RTG
 						-- Board 5 - SANA2
 						-- Board 6 - AHI
@@ -391,10 +393,6 @@ PROCESS (clk) BEGIN -- Autoconfig action section
 				END CASE;
 			END IF;
 		ELSE
-			IF sel_autoconfig='1' THEN
-				-- IF autoconfig_out="100" THEN autoconfig_out<="000"; END IF; -- Update for number of boards + 1
-				IF autoconfig_out="100" THEN turbochip_ena <= '1'; END IF; -- enable turbo_chipram after autoconfig has been done... 
-			END IF;
 		END IF;
 	END IF;	
 END PROCESS;
