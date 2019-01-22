@@ -60,8 +60,29 @@ module sdram_ctrl(
   output reg            ena7RDreg,
   output reg            ena7WRreg,
   output wire           cpuena
+  // ddram
+//  input  wire [27:0] 	wraddr,
+//  input  wire [15:0] 	din,
+//  input  wire        	we_req,
+//  output reg         	we_ack,
+//
+//  input  wire [27:1] 	rdaddr,
+//  output wire [15:0] 	dout,
+//  input  wire        	rd_req,
+//  output reg         	rd_ack
 );
 
+//ddram ddram_ctrl(
+//	.wraddr(wraddr),
+//	.din(din),
+//	.we_req(we_req),
+//	.we_ack(we_ack),
+//
+//	.rdaddr(rdaddr),
+//	.dout(dout),
+//	.rd_req(rd_req),
+//	.rd_ack(rd_ack)
+//);
 
 //// parameters ////
 localparam [1:0]
@@ -166,7 +187,7 @@ wire          writebuffer_cache_ack;
 reg           writebuffer_hold;
 reg  [ 2-1:0] writebuffer_state;
 wire [25-1:1] cpuAddr_mangled;
-
+reg 			  sel_ddr3;
 
 
 ////////////////////////////////////////
@@ -181,7 +202,6 @@ wire [25-1:1] cpuAddr_mangled;
 //cpuAddr_mangled<=cpuAddr(24)&cpuAddr(3)&cpuAddr(22 downto 4)&cpuAddr(23)&cpuAddr(2 downto 1)
 //  when cpuAddr(24)='1' else cpuAddr;
 assign cpuAddr_mangled = cpuAddr;
-
 
 ////////////////////////////////////////
 // reset
@@ -675,7 +695,6 @@ always @ (posedge sysclk) begin
     endcase
   end
 end
-
 
 //// slots ////
 //        Slot 1                    Slot 2

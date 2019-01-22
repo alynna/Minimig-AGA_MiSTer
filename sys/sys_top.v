@@ -919,6 +919,7 @@ wire  [1:0] scanlines;
 wire  [15:0] lltune;
 wire        clk_sys, clk_vid, ce_pix;
 
+// DDR3 expansion RAM interface
 wire        ram_clk;
 wire [28:0] ram_address;
 wire [7:0]  ram_burstcount;
