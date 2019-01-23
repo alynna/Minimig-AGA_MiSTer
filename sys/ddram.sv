@@ -28,7 +28,6 @@
 module ddram
 (
 	input         DDRAM_CLK,
-
 	input         DDRAM_BUSY,
 	output  [7:0] DDRAM_BURSTCNT,
 	output [29:0] DDRAM_ADDR,
@@ -49,6 +48,7 @@ module ddram
 	input         rd_req,
 	output        rd_ack
 );
+
 parameter RAMBASE = 'h30000000;
 // NOTE: ascal uses data between $00000000 and $01FFFFFF
 // Recommend leaving all space between $00000000 and $0FFFFFFF for MiSTer

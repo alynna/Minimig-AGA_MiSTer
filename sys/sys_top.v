@@ -451,7 +451,6 @@ assign adj_waitrequest = cfg_waitrequest;
 /////////////////////////  Lite version  ////////////////////////////////
 
 `ifdef LITE
-
 wire reset;
 sysmem_lite sysmem
 (
@@ -465,6 +464,7 @@ sysmem_lite sysmem
 	.reset_warm_req(0),
 
 	//64-bit DDR3 RAM access
+	//Hooked to 256M DDR3 expansion
 	.ramclk1_clk(ram_clk),
 	.ram1_address(ram_address),
 	.ram1_burstcount(ram_burstcount),
@@ -477,18 +477,17 @@ sysmem_lite sysmem
 	.ram1_write(ram_write),
 
 	//Spare 64-bit DDR3 RAM access
-	//currently unused
-	//can combine with ram1 to make a wider RAM bus (although will increase the latency)
-	.ramclk2_clk(0),
-	.ram2_address(0),
-	.ram2_burstcount(0),
-	.ram2_waitrequest(),
-	.ram2_readdata(),
-	.ram2_readdatavalid(),
-	.ram2_read(0),
-	.ram2_writedata(0),
-	.ram2_byteenable(0),
-	.ram2_write(0),
+	//Hooked to RTG card
+	.ramclk2_clk(rtg_clk),
+	.ram2_address(rtg_address),
+	.ram2_burstcount(rtg_burstcount),
+	.ram2_waitrequest(rtg_waitrequest),
+	.ram2_readdata(rtg_readdata),
+	.ram2_readdatavalid(rtg_readdatavalid),
+	.ram2_read(rtg_read),
+	.ram2_writedata(rtg_writedata),
+	.ram2_byteenable(rtg_byteenable),
+	.ram2_write(rtg_write),
 
 	.uart_ri(0),
 	.uart_dsr(uart_dsr),
@@ -931,6 +930,19 @@ wire [63:0] ram_writedata;
 wire [7:0]  ram_byteenable;
 wire        ram_write;
 
+// DDR3 expansion RAM interface 2 - RTG graphics
+wire        rtg_clk;
+wire [28:0] rtg_address;
+wire [7:0]  rtg_burstcount;
+wire        rtg_waitrequest;
+wire [63:0] rtg_readdata;
+wire        rtg_readdatavalid;
+wire        rtg_read;
+wire [63:0] rtg_writedata;
+wire [7:0]  rtg_byteenable;
+wire        rtg_write;
+
+
 wire        led_user;
 wire  [1:0] led_power;
 wire  [1:0] led_disk;
@@ -985,17 +997,6 @@ emu emu
 	.IO_DIN(io_din),
 	.IO_DOUT(io_dout),
 
-	.DDRAM_CLK(ram_clk),
-	.DDRAM_ADDR(ram_address),
-	.DDRAM_BURSTCNT(ram_burstcount),
-	.DDRAM_BUSY(ram_waitrequest),
-	.DDRAM_DOUT(ram_readdata),
-	.DDRAM_DOUT_READY(ram_readdatavalid),
-	.DDRAM_RD(ram_read),
-	.DDRAM_DIN(ram_writedata),
-	.DDRAM_BE(ram_byteenable),
-	.DDRAM_WE(ram_write),
-
 	.SDRAM_DQ(SDRAM_DQ),
 	.SDRAM_A(SDRAM_A),
 	.SDRAM_DQML(SDRAM_DQML),
@@ -1016,4 +1017,59 @@ emu emu
 	.UART_DSR(uart_dtr)
 );
 
+// HPS RAM declaration - 256MB RAM expansion
+ddram #(
+	.RAMBASE('h30000000),
+	.RAMSIZE(27)
+)
+ddr3 (
+	.DDRAM_CLK(ram_clk),
+	.DDRAM_ADDR(ram_address),
+	.DDRAM_BURSTCNT(ram_burstcount),
+	.DDRAM_BUSY(ram_waitrequest),
+	.DDRAM_DOUT(ram_readdata),
+	.DDRAM_DOUT_READY(ram_readdatavalid),
+	.DDRAM_RD(ram_read),
+	.DDRAM_DIN(ram_writedata),
+	.DDRAM_BE(ram_byteenable),
+	.DDRAM_WE(ram_write)
+);
+
+// HPS RAM declaration - 32MB RTG expansion
+ddram #(
+	.RAMBASE('h2c000000),
+	.RAMSIZE(24)
+)
+rtg (
+	.DDRAM_CLK(rtg_clk),
+	.DDRAM_ADDR(rtg_address),
+	.DDRAM_BURSTCNT(rtg_burstcount),
+	.DDRAM_BUSY(rtg_waitrequest),
+	.DDRAM_DOUT(rtg_readdata),
+	.DDRAM_DOUT_READY(rtg_readdatavalid),
+	.DDRAM_RD(rtg_read),
+	.DDRAM_DIN(rtg_writedata),
+	.DDRAM_BE(rtg_byteenable),
+	.DDRAM_WE(rtg_write)
+);
+
+assign ram_clk = SDRAM_CLK;
+assign rtg_clk = SDRAM_CLK;
+
 endmodule
+
+// Current Memory map (best config): Minimig MiSTer
+//  Amiga                FPGA               Type        Usage
+// $00000000-$001FFFFF  $00000000-$001FFFFF SDRAM       Chip RAM
+// $00200000-$00BFFFFF  $00200000-$00BFFFFF SDRAM       Z2 Fast
+// $00C00000-$00D7FFFF  $00C00000-$00D7FFFF SDRAM       Bogo
+// $00D80000-$00DFFFFF  $00D80000-$00D8FFFF SDRAM       Unusued (typically top half of 1MB ROM)
+// $00E00000-$00EFFFFF  $00E00000-$00EFFFFF I/O         Direct driven in tg68k.vhd
+// $00F00000-$00F7FFFF  $00F00000-$00F7FFFF None        Unusued (Typically expansion ROM / cartridge)
+// $00F80000-$00F8FFFF  $00F80000-$00F8FFFF SDRAM       Kickstart ROM
+// $40000000-$40FFFFFF  $01000000-$01FFFFFF SDRAM       Z3 Fast RAM (16mb)
+// $50000000-$5FFFFFFF  $30000000-$3FFFFFFF DDR3        Z3 Fast RAM (256mb)
+// $60000000-$63FFFFFF  $2C000000-$2FFFFFFF DDR3        Retargetable Graphics (RTG) (32mb)
+
+
+
