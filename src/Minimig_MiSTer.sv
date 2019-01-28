@@ -68,16 +68,16 @@ module emu
 
    //High latency DDR3 RAM interface
    //Use for non-critical time purposes
-//   output        DDRAM_CLK,
-//   input         DDRAM_BUSY,
-//   output  [7:0] DDRAM_BURSTCNT,
-//   output [28:0] DDRAM_ADDR,
-//   input  [63:0] DDRAM_DOUT,
-//   input         DDRAM_DOUT_READY,
-//   output        DDRAM_RD,
-//   output [63:0] DDRAM_DIN,
-//   output  [7:0] DDRAM_BE,
-//   output        DDRAM_WE,
+   output        DDRAM_CLK,
+   input         DDRAM_BUSY,
+   output  [7:0] DDRAM_BURSTCNT,
+   output [28:0] DDRAM_ADDR,
+   input  [63:0] DDRAM_DOUT,
+   input         DDRAM_DOUT_READY,
+   output        DDRAM_RD,
+   output [63:0] DDRAM_DIN,
+   output  [7:0] DDRAM_BE,
+   output        DDRAM_WE,
 
    //SDRAM interface with lower latency
    output        SDRAM_CLK,
@@ -100,7 +100,6 @@ module emu
 	input	        UART_DSR
 );
 
-// assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = 0;
 
 ////////////////////////////////////////
 // internal signals                   //
@@ -132,7 +131,13 @@ wire           tg68_rw;
 wire           tg68_ena7RD;
 wire           tg68_ena7WR;
 wire           tg68_enaWR;
+wire [ 16-1:0] tg68_fromram;
+wire [ 16-1:0] tg68_sdrd;
 wire [ 16-1:0] tg68_cout;
+wire [ 16-1:0] tg68_ddr3d;
+wire 				tg68_ddr3r;
+wire [ 32-1:0] tg68_rtga;
+wire [ 16-1:0] tg68_rtgd;
 wire           tg68_cpuena;
 wire [  4-1:0] cpu_config;
 wire [  6-1:0] memcfg;
@@ -247,6 +252,9 @@ TG68K tg68k
 	.ena7WRreg    (tg68_ena7WR      ),
 	.enaWRreg     (tg68_enaWR       ),
 	.fromram      (tg68_cout        ),
+	.ddr3_rdy     (tg68_ddr3r       ),
+	.rtg_addr     (tg68_rtga        ),
+	.rtg_data     (tg68_rtgd        ),
 	.ramready     (tg68_cpuena      ),
 	.cpu          (cpu_config[1:0]  ),
 	.turbochipram (turbochipram     ),
@@ -259,6 +267,8 @@ TG68K tg68k
 	.cpuDMA       (tg68_cdma        ),
 	.ramlds       (tg68_clds        ),
 	.ramuds       (tg68_cuds        ),
+	.sel_ddr3     (sel_ddr3         ),
+	.sel_rtg      (sel_rtg          ),
 
 	//custom CPU signals
 	.cpustate     (tg68_cpustate    ),
@@ -292,7 +302,7 @@ sdram_ctrl sdram
 	.cpuL         (tg68_clds        ),
 	.cpustate     (tg68_cpustate    ),
 	.cpu_dma      (tg68_cdma        ),
-	.cpuRD        (tg68_cout        ),
+	.cpuRD        (tg68_sdrd        ),
 	.cpuena       (tg68_cpuena      ),
 	.enaWRreg     (tg68_enaWR       ),
 	.ena7RDreg    (tg68_ena7RD      ),
@@ -307,6 +317,46 @@ sdram_ctrl sdram
 	.chipRD       (ramdata_in       ),
 	.chip48       (chip48           )
 );
+
+// HPS RAM declaration - All 512M RAM.  Use for multiple cards.
+ddram ddram (
+	.DDRAM_CLK(DDRAM_CLK),
+	.DDRAM_ADDR(DDRAM_ADDR),
+	.DDRAM_BURSTCNT(DDRAM_BURSTCNT),
+	.DDRAM_BUSY(DDRAM_BUSY),
+	.DDRAM_DOUT(DDRAM_DOUT),
+	.DDRAM_DOUT_READY(DDRAM_DOUT_READY),
+	.DDRAM_RD(DDRAM_RD),
+	.DDRAM_DIN(DDRAM_DIN),
+	.DDRAM_BE(DDRAM_BE),
+	.DDRAM_WE(DDRAM_WE),
+	.wr_a(wr_a),
+	.wr_d(wr_d),
+	.wr_be(wr_be),
+	.wr_req(wr_req),
+	.wr_ack(wr_ack),
+	.rd_a(rd_a),
+	.rd_d(rd_d),
+	.rd_req(rd_req),
+	.rd_ack(rd_ack)
+);
+
+assign DDRAM_CLK = clk_114;
+assign tg68_cout = (tg68_cad[31:28] == 4'b0011)    ? tg68_ddr3d : // $3xxxxxxx/256M
+						 (tg68_cad[31:25] == 7'b0010111) ? tg68_rtgd  : // $2Exxxxxx/32M
+						 (tg68_cad[31:25] == 7'b0000000) ? tg68_sdrd  : // $00xxxxxx/32M					
+																	16'h05AF;    	// Actual unmapped space :)
+wire sel_ddr3;
+wire sel_rtg;
+wire [29:0] wr_a;
+wire [15:0] wr_d;
+wire [1:0] wr_be;
+wire wr_req;
+wire wr_ack;
+wire [29:0] rd_a;
+wire [15:0] rd_d;
+wire rd_req;
+wire rd_ack;
 
 assign IO_DOUT = IO_UIO ? uio_dout : fpga_dout;
 
@@ -410,7 +460,7 @@ minimig minimig
 	.kbd_mouse_strobe (kbd_mouse_strobe), // kbd/mouse data strobe
 	.kms_level    (kms_level        ),
 	.pwr_led      (LED_POWER[0]     ), // power led
-	.fdd_led      (LED_USER         ),
+	.fdd_led      (0                ),
 	.hdd_led      (LED_DISK[0]      ),
 	.rtc          (rtc              ),
 
@@ -607,6 +657,48 @@ always @(posedge clk_28) begin
 
 		if(scr_res != res || scr_vsize != vsize || scr_hsize != hsize) scr_flg <= scr_flg + 1'd1;
 	end
+end
+
+
+// DDR3 interface
+// Use Sorgelig / Grablosure / Alynna ddram.sv interface that caches. 
+// 00-> fetch code 10->read data 11->write data 01->no memaccess
+always @(posedge DDRAM_CLK) // maybe (posedge DDRAM_CLK, posedge RESET) 
+begin
+	if (!RESET) begin
+		rd_req <= 0;
+		wr_req <= 0;
+	end
+   // Ready except during a read/write that has not been acked
+	tg68_ddr3r <= (({tg68_rw, rd_req, rd_ack} == 3'b110) || ({tg68_rw, wr_req, wr_ack} == 3'b010)) ? 1'b0 : 1'b1; 
+	// Light User LED whenever DDR3 is being accessed (debugging)
+	LED_USER <= ({rd_req, rd_ack, wr_req, wr_ack} == 4'b0000) ? 1'b0 : 1'b1; 
+	if (tg68_cad[31:29] == 3'b001) begin // $20000000-$3FFFFFFF
+		casex ({tg68_cpustate[1:0], tg68_rw, wr_req, wr_ack, rd_req, rd_ack})
+			7'b?1000?? : begin // WRITE|!REQ|!ACK -- begin write
+				wr_a <= tg68_cad[29:0];
+				wr_be <= {~tg68_cuds, ~tg68_clds};
+				wr_d <= tg68_dat_out;
+				wr_req <= 1'b1;
+				end
+			7'b?01??00 : begin // READ|!REQ|!ACK -- begin read
+				rd_a <= tg68_cad[29:0];
+				rd_req <= 1'b1;
+				end
+			default: begin end
+		endcase
+	end
+	// Can occur anytime
+	casex ({tg68_cpustate[1:0], tg68_rw, wr_req, wr_ack, rd_req, rd_ack})
+		7'b?10?1?? : begin // WRITE|ANY|ACK -- commit write
+			wr_req <= 1'b0; 
+			end
+		7'b?01???1 : begin // READ|ANY|ACK -- Commit read
+			tg68_ddr3d <= rd_d;
+			rd_req <= 1'b0;
+			end
+		default: begin end
+	endcase
 end
 
 endmodule

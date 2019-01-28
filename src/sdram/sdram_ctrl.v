@@ -187,7 +187,6 @@ wire          writebuffer_cache_ack;
 reg           writebuffer_hold;
 reg  [ 2-1:0] writebuffer_state;
 wire [25-1:1] cpuAddr_mangled;
-reg 			  sel_ddr3;
 
 
 ////////////////////////////////////////

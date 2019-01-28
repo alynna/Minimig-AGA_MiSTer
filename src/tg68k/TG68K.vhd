@@ -50,6 +50,9 @@ entity TG68K is
     ena7WRreg     : in      std_logic:='1';
     enaWRreg      : in      std_logic:='1';
     fromram       : in      std_logic_vector(15 downto 0);
+    ddr3_rdy      : in      std_logic;
+    rtg_addr      : buffer  std_logic_vector(31 downto 0);
+    rtg_data      : buffer  std_logic_vector(15 downto 0);
     ramready      : in      std_logic:='0';
     cpu           : in      std_logic_vector(1 downto 0);
     fastramcfg    : in      std_logic_vector(2 downto 0);
@@ -64,12 +67,15 @@ entity TG68K is
     cpuDMA        : buffer  std_logic;
     ramlds        : out     std_logic;
     ramuds        : out     std_logic;
+	 sel_ddr3		: buffer	 std_logic;
+	 sel_rtg 		: buffer  std_logic:='0';
     CACR_out      : buffer  std_logic_vector(3 downto 0);
     VBR_out       : buffer  std_logic_vector(31 downto 0)
   );
 end TG68K;
 
 ARCHITECTURE logic OF TG68K IS
+-- Interface TG68k
 COMPONENT TG68KdotC_Kernel
 	generic(
 		SR_Read         : integer := 2; --0=>user,   1=>privileged,   2=>switchable with CPU(0)
@@ -99,33 +105,6 @@ COMPONENT TG68KdotC_Kernel
 		CACR_out        : buffer  std_logic_vector(3 downto 0);
 		VBR_out         : buffer  std_logic_vector(31 downto 0)
 	);
-END COMPONENT;
-
-SIGNAL DDRAM_CLK	: std_logic;
-SIGNAL wraddr 		: std_logic_vector(29 downto 0);
-SIGNAL din 			: std_logic_vector(15 downto 0);
-SIGNAL we_req  	: std_logic;
-SIGNAL we_ack 		: std_logic;
-SIGNAL rdaddr 		: std_logic_vector(29 downto 0);
-SIGNAL dout   		: std_logic_vector(15 downto 0);
-SIGNAL rd_req 		: std_logic;
-SIGNAL rd_ack 		: std_logic;
-SIGNAL ddr3_rdy	: std_logic;
-SIGNAL do_read		: std_logic;
-SIGNAL ddr3_data	: std_logic_vector(15 downto 0);
-
-COMPONENT ddram
-PORT(
-	DDRAM_CLK: in std_logic;
-	wraddr: in std_logic_vector(29 downto 0);
-	din: in std_logic_vector(15 downto 0);
-	we_req: in std_logic;
-	we_ack: out std_logic;
-	rdaddr: in std_logic_vector(29 downto 0);
-	dout: out std_logic_vector(15 downto 0);
-	rd_req: in std_logic;
-	rd_ack: out std_logic
-);
 END COMPONENT;
 
 SIGNAL cpuaddr          : std_logic_vector(31 downto 0);
@@ -164,7 +143,6 @@ SIGNAL autoconfig_data3 : std_logic_vector(3 downto 0); -- Zorro III DDR3
 -- SIGNAL autoconfig_data7 : std_logic_vector(3 downto 0); -- Zorro III ?
 SIGNAL sel_fast         : std_logic;
 SIGNAL sel_chipram      : std_logic;
-SIGNAL sel_ddr3			: std_logic;
 SIGNAL turbochip_ena    : std_logic := '0';
 SIGNAL turbochip_d      : std_logic := '0';
 SIGNAL turbokick_d      : std_logic := '0';
@@ -188,6 +166,55 @@ SIGNAL sel_kickram      : std_logic;
 SIGNAL NMI_vector       : std_logic_vector(15 downto 0);
 SIGNAL NMI_addr         : std_logic_vector(31 downto 0);
 SIGNAL sel_interrupt    : std_logic;
+
+-- Interface DDRAM
+--COMPONENT ddram IS
+-- PORT (
+--	DDRAM_CLK : IN std_logic;
+--	DDRAM_BUSY : IN std_logic;
+--	DDRAM_BURSTCNT : OUT std_logic_vector(7 DOWNTO 0);
+--	DDRAM_ADDR : OUT std_logic_vector(29 DOWNTO 0);
+--	DDRAM_DOUT : IN std_logic_vector(63 DOWNTO 0);
+--	DDRAM_DOUT_READY : IN std_logic;
+--	DDRAM_RD : OUT std_logic;
+--	DDRAM_DIN : OUT std_logic_vector(63 DOWNTO 0);
+--	DDRAM_BE : OUT std_logic_vector(7 DOWNTO 0);
+--	DDRAM_WE : OUT std_logic;
+--	wr_a   : IN std_logic_vector(29 DOWNTO 0);
+--	wr_be  : IN std_logic_vector(1 DOWNTO 0);
+--	wr_d   : IN std_logic_vector(15 DOWNTO 0);
+--	wr_req : IN std_logic;
+--	wr_ack : OUT std_logic;
+--	rd_a   : IN std_logic_vector(29 DOWNTO 0);
+--	rd_d   : OUT std_logic_vector(15 DOWNTO 0);
+--	rd_req : IN std_logic;
+--	rd_ack : OUT std_logic);
+--END COMPONENT;
+
+--SIGNAL DDRAM_CLK        : std_logic;
+--SIGNAL DDRAM_BUSY       : std_logic;
+--SIGNAL DDRAM_BURSTCNT   : std_logic_vector(7 DOWNTO 0);
+--SIGNAL DDRAM_ADDR       : std_logic_vector(29 DOWNTO 0);
+--SIGNAL DDRAM_DOUT       : std_logic_vector(63 DOWNTO 0);
+--SIGNAL DDRAM_DOUT_READY : std_logic;
+--SIGNAL DDRAM_RD         : std_logic;
+--SIGNAL DDRAM_DIN        : std_logic_vector(63 DOWNTO 0);
+--SIGNAL DDRAM_BE         : std_logic_vector(7 DOWNTO 0);
+--SIGNAL DDRAM_WE         : std_logic;
+--SIGNAL wr_a             : std_logic_vector(29 DOWNTO 0);
+--SIGNAL wr_be            : std_logic_vector(1 DOWNTO 0);
+--SIGNAL wr_d             : std_logic_vector(15 DOWNTO 0);
+--SIGNAL wr_req           : std_logic;
+--SIGNAL wr_ack           : std_logic;
+--SIGNAL rd_a             : std_logic_vector(29 DOWNTO 0);
+--SIGNAL rd_d             : std_logic_vector(15 DOWNTO 0);
+--SIGNAL rd_req           : std_logic;
+--SIGNAL rd_ack           : std_logic;
+--SIGNAL ddr3_rdy			: std_logic;
+--SIGNAL do_read				: std_logic;
+--SIGNAL ddr3_data			: std_logic_vector(15 DOWNTO 0);
+--SIGNAL ddr3_cnt			: std_logic_vector(5 DOWNTO 0);
+
 BEGIN
 
 -- NMI
@@ -201,27 +228,35 @@ PROCESS(clk) BEGIN
 	END IF;
 END PROCESS;
 
-ddr3: COMPONENT ddram
-PORT MAP(
-	DDRAM_CLK => DDRAM_CLK,
-	wraddr => wraddr,
-	din => din,
-	we_req => we_req,
-	we_ack => we_ack,
-
-	rdaddr => rdaddr,
-	dout => dout,
-	rd_req => rd_req,
-	rd_ack => rd_ack
-);
+--ddr3: ddram
+-- PORT MAP (
+--	DDRAM_CLK        => clk,
+--	DDRAM_BUSY       => DDRAM_BUSY,
+--	DDRAM_BURSTCNT   => DDRAM_BURSTCNT,
+--	DDRAM_ADDR       => DDRAM_ADDR,
+--	DDRAM_DOUT       => DDRAM_DOUT,
+--	DDRAM_DOUT_READY => DDRAM_DOUT_READY,
+--	DDRAM_RD         => DDRAM_RD,
+--	DDRAM_DIN        => DDRAM_DIN,
+--	DDRAM_BE         => DDRAM_BE,
+--	DDRAM_WE         => DDRAM_WE,
+--	wr_a             => wr_a,
+--	wr_be            => wr_be,
+--	wr_d             => wr_d,
+--	wr_req           => wr_req,
+--	wr_ack           => wr_ack,
+--	rd_a             => rd_a,
+--	rd_d             => rd_d,
+--	rd_req           => rd_req,
+--	rd_ack           => rd_ack
+--);
 
 NMI_vector <= X"000c" WHEN cpuaddr(1)='1' ELSE X"00a0"; -- 16-bit bus!
 
 wrd <= wr;
 addr <= cpuaddr;
 datatg68 <= NMI_vector                           WHEN sel_interrupt='1'
-		 ELSE ddr3_data									 WHEN sel_ddr3='1'                                -- DDR3
-       ELSE fromram                              WHEN sel_fast='1'                                -- SDRAM
+       ELSE fromram                              WHEN sel_fast='1' OR sel_ddr3='1' OR sel_rtg='1' -- RAM based sources on any bus
        ELSE autoconfig_data1&r_data(11 downto 0) WHEN sel_autoconfig='1' AND autoconfig_out="001" -- Zorro II RAM autoconfig
        ELSE autoconfig_data2&r_data(11 downto 0) WHEN sel_autoconfig='1' AND autoconfig_out="010" -- Zorro III RAM autoconfig
        ELSE autoconfig_data3&r_data(11 downto 0) WHEN sel_autoconfig='1' AND autoconfig_out="011" -- Zorro III DDR3 RAM autoconfig
@@ -235,8 +270,8 @@ sel_chipram     <= '1' WHEN (cpuaddr(31 downto 24)="00000000") AND (cpuaddr(23 d
 sel_kickram     <= '1' WHEN (cpuaddr(31 downto 24)="00000000") AND ((cpuaddr(23 downto 19)="11111") OR (cpuaddr(23 downto 19)="11100"))  AND turbochip_ena='1' AND turbokick_d='1' ELSE '0'; -- $f8xxxx, e0xxxx
 sel_interrupt   <= '1' WHEN (cpuaddr(31 downto 2) = NMI_addr(31 downto 2)) AND wr='0' ELSE '0';
 
-sel_fast        <= '1' WHEN state/="01" AND (cpuaddr(31 downto 28)/=z3xram_base(7 downto 4)) AND (sel_z2ram='1' OR sel_z3ram='1' OR sel_chipram='1' OR sel_kickram='1') ELSE '0';
-sel_ddr3        <= '1' WHEN state/="01" AND (cpuaddr(31 downto 28)=z3xram_base(7 downto 4)) ELSE '0';
+sel_ddr3        <= '1' WHEN state/="01" AND sel_z3xram='1' ELSE '0';
+sel_fast        <= '1' WHEN state/="01" AND sel_z3xram='0' AND (sel_z2ram='1' OR sel_z3ram='1' OR sel_chipram='1' OR sel_kickram='1') ELSE '0';
 
 cache_inhibit   <= '1' WHEN sel_chipram='1' OR sel_kickram='1' ELSE '0';
 
@@ -246,14 +281,23 @@ cpustate <= clkena&slower(1 downto 0)&ramcs&state;
 ramlds <= lds_in;
 ramuds <= uds_in;
 
--- Map accesses to SDRAM between $30000000-$3FFFFFFF to DDR3 for Z3X expansion, 00 all others.
-ramaddr(31 downto 30) <= "00";
-ramaddr(29 downto 28) <= "11" WHEN sel_z3xram='1' ELSE "00";
-ramaddr(27 downto 25) <= cpuaddr(27 downto 25) WHEN sel_z3xram='1' ELSE "000";
+-- We now allow the bus arbitrator in minimig_mister to handle RAM above $0FFFFFFF
+ramaddr(31 downto 30) <= "00"; -- All possible physical RAM expansions end at $1FFFFFFF
+-- $00000000-$01FFFFFF : SDRAM 32M
+-- $20000000-$21FFFFFF : ASCAL (DDR3)
+-- $2E000000-$2FFFFFFF : RTG (DDR3) 32M
+-- $30000000-$3FFFFFFF : RAM Expansion (DDR3) 256M
 
--- Remap the Zorro III RAM to 0x1000000
--- Pass Zorro III DDR3, else 0
-ramaddr(24)           <= '1' WHEN sel_z3ram='1' ELSE cpuaddr(24) when sel_z3xram='1' else '0';  
+-- Remap the Zorro III 256M RAM to 0x30000000
+-- Remap the Zorro III 32M RTG to 0x2E000000
+-- Remap the Zorro III 16M RAM to 0x01000000
+-- Pass all others
+ramaddr(29 downto 28) <= "11"    WHEN sel_z3xram='1' ELSE                        -- $3xxxxxxxx
+								 "10"    WHEN sel_rtg='1'    ELSE 
+								 "00"		WHEN sel_z3ram='1'  ELSE cpuaddr(29 downto 28); -- $2xxxxxxxx
+ramaddr(27 downto 25) <= "111"   WHEN sel_rtg='1'    ELSE                        -- $2Exxxxxxx, $2Fxxxxxx
+								 "000" 	WHEN sel_z3ram='1'  ELSE cpuaddr(27 downto 25);	-- $00000000  -$01FFFFFF							 								 
+ramaddr(24)           <= '1'     WHEN sel_z3ram='1'  ELSE cpuaddr(24);
 
 ramaddr(23 downto 21) <=   "100" WHEN sel_z2ram&cpuaddr(23 downto 21)="1001" -- 2 -> 8
 							 ELSE "101" WHEN sel_z2ram&cpuaddr(23 downto 21)="1010" -- 4 -> A
@@ -469,7 +513,7 @@ PROCESS (clk) BEGIN
 	END IF;
 END PROCESS;
 
-clkena <= '1' when (clkena_in='1' AND enaWRreg='1' AND (state="01" OR (ena7RDreg='1' AND clkena_e='1') OR ramready='1')) else '0';
+clkena <= '1' when (clkena_in='1' AND enaWRreg='1' AND (state="01" OR (ena7RDreg='1' AND clkena_e='1') OR (ramready='1' AND ddr3_rdy='1'))) else '0';
 
 PROCESS (clk) BEGIN
 	IF rising_edge(clk) THEN
@@ -574,33 +618,6 @@ PROCESS (clk, reset, state, as_s, as_e, rw_s, rw_e, uds_s, uds_e, lds_s, lds_e, 
 				WHEN OTHERS =>
 					clkena_e <= '1';
 			END CASE;
-		END IF;
-	END IF;
-END PROCESS;
-
--- I noticed these are ordered by which should go first.  DDR3 should go last
-ddr3_rdy <= '1' WHEN (we_ack=we_req AND rd_ack=rd_req) ELSE '0';
-PROCESS (DDRAM_CLK) BEGIN
-	IF rising_edge(DDRAM_CLK) THEN
-		IF reset='0' THEN
-			we_req <= '0';
-			rd_req <= '0';
-			do_read <= '0';
-		ELSIF sel_ddr3='1' AND ddr3_rdy='1' THEN
-			IF wr='1' THEN
-				wraddr <= cpuaddr(27 downto 1);
-				din <= datatg68;
-				we_req <= NOT we_ack;
-			ELSE
-				IF do_read='0' THEN
-					rdaddr <= cpuaddr(27 downto 1);
-					rd_req <= NOT rd_ack;
-					do_read <= '1';
-				ELSE
-					ddr3_data <= dout;
-					do_read <= '0';
-				END IF;
-			END IF;
 		END IF;
 	END IF;
 END PROCESS;

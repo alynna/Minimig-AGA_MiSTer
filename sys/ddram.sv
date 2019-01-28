@@ -21,117 +21,119 @@
 
 // 16-bit version
 // Some mods by Alynna
-// 1/21/19: Allow module to be instantiated with different RAM bases and sizes
-//          Primitive memory protection by limiting the size of the address bus
-//          as instantiated.  
-
+// Thank you @grablosaure for rewriting this 
+// I removed the instantiation parameter logic, so I can use
+// one module for multiple devices.
+// Caveats:
+// This module lets you access all 512m of the HPS DDR3.
+// $20000000-$3FFFFFFF
+// At the very least, ASCAL uses $20000000-$21FFFFFF
+// It is smart to reserve $20000000-$27FFFFFF for MiSTer functionality.
+// I recommend working your way down from the top of memory ($3FFFFFFF).
 module ddram
 (
 	input         DDRAM_CLK,
-	input         DDRAM_BUSY,
-	output  [7:0] DDRAM_BURSTCNT,
-	output [29:0] DDRAM_ADDR,
-	input  [63:0] DDRAM_DOUT,
-	input         DDRAM_DOUT_READY,
-	output        DDRAM_RD,
-	output [63:0] DDRAM_DIN,
-	output  [7:0] DDRAM_BE,
-	output        DDRAM_WE,
-
-	input  [29:0] wraddr,
-	input  [15:0] din,
-	input         we_req,
-	output   	  we_ack,
-
-	input  [29:0] rdaddr,
-	output [15:0] dout,
+	
+	input         DDRAM_BUSY, // waitrequest
+	output [7:0]  DDRAM_BURSTCNT, // burstcount
+	output [28:0] DDRAM_ADDR, // address (in HPS reserved memory $20000000-$3FFFFFFF)
+	input  [63:0] DDRAM_DOUT, // readdata
+	input         DDRAM_DOUT_READY, // readdatavalid
+	output        DDRAM_RD, // read
+	output [63:0] DDRAM_DIN, // readdata
+	output [7:0]  DDRAM_BE, // byteenable
+	output        DDRAM_WE, // write
+	
+	input [29:0]  wr_a,
+	input [15:0]  wr_d,
+	input [1:0]   wr_be,
+	input         wr_req,
+	output        wr_ack,
+	
+	
+	input  [29:0] rd_a,
+	output [15:0] rd_d,
 	input         rd_req,
 	output        rd_ack
 );
 
-parameter RAMBASE = 'h30000000;
-// NOTE: ascal uses data between $00000000 and $01FFFFFF
-// Recommend leaving all space between $00000000 and $0FFFFFFF for MiSTer
+// I will probably be implementing a write cache.
+// Some of these new regs are for this.
+reg [7:0]     ram_burst;
+reg [63:0]    ram_rq, next_rq, ram_wq;
+reg [63:0]    ram_data;
+reg [29:0]    ram_address, cache_addr, wcache_addr;
+reg           ram_read = 0;
+reg           ram_write = 0;
+reg [7:0]     ram_be, ram_wbe;
+reg           wr_pend = 0;
+reg [1:0]     rd_pend = 0;
+reg           rc_valid;
+reg           wc_valid;
 
-parameter RAMSIZE = 27; // Expressed as 2^(RAMSIZE+1) bytes
-// 15 = 64K
-// 19 = 1MB
-// 23 = 16M
-// 26 = 128M
-// 27 = 256M
-// 28 = 512M -- ALL HPS RAM -- WARNING, ascal will be in this space, do not use with base < $02000000
+reg    rd_acki,wr_acki;
+assign rd_ack=rd_acki;
+assign wr_ack=wr_acki;
 
-assign DDRAM_ADDR     = {RAMBASE[28:RAMSIZE+1], ram_address[RAMSIZE:3]};
+// Constrain assignments to $20xxxxxx-$3Fxxxxxx.  Lower addresses will echo to upper ones.
+// Addresses sent to this module represent their exact address in HPS RAM.
+assign DDRAM_ADDR     = {3'b001,ram_address[28:3]};
 assign DDRAM_BURSTCNT = ram_burst;
-assign DDRAM_BE       = (8'd3<<{ram_address[2:1],1'b0}) | {8{ram_read}};
+assign DDRAM_BE       = ram_be;
 assign DDRAM_RD       = ram_read;
 assign DDRAM_DIN      = ram_data;
 assign DDRAM_WE       = ram_write;
 
-assign dout = (rdaddr[RAMSIZE:1] < wraddr[RAMSIZE:1]) ? ram_q[{rdaddr[2:1], 4'b0000} +:16] : 16'd0;
-
-reg  [7:0] ram_burst;
-reg [63:0] ram_q, next_q;
-reg [63:0] ram_data;
-reg [29:0] ram_address, cache_addr;
-reg        ram_read = 0;
-reg        ram_write = 0;
-
-reg [1:0]  state  = 0;
+assign rd_d = ram_rq[{rd_a[2:1], 4'b0000} +:16];
 
 always @(posedge DDRAM_CLK) begin
-
-	if(!DDRAM_BUSY) begin
-		ram_write <= 0;
-		ram_read  <= 0;
-
-		case(state)
-			0: if(we_ack != we_req) begin
-					ram_data		<= {4{din}};
-					ram_address <= wraddr;
-					ram_write 	<= 1;
-					ram_burst   <= 1;
-					state       <= 1;
-				end
-				else if(rd_req != rd_ack) begin
-					if(cache_addr[RAMSIZE:3] == rdaddr[RAMSIZE:3]) rd_ack <= rd_req;
-					else if((cache_addr[RAMSIZE:3]+1'd1) == rdaddr[RAMSIZE:3]) begin
-						rd_ack      <= rd_req;
-						ram_q       <= next_q;
-						cache_addr  <= {rdaddr[RAMSIZE:3],3'b000};
-						ram_address <= {rdaddr[RAMSIZE:3]+1'd1,3'b000};
-						ram_read    <= 1;
-						ram_burst   <= 1;
-						state       <= 3;
-					end
-					else begin
-						ram_address <= {rdaddr[RAMSIZE:3],3'b000};
-						cache_addr  <= {rdaddr[RAMSIZE:3],3'b000};
-						ram_read    <= 1;
-						ram_burst   <= 2;
-						state       <= 2;
-					end 
-				end
-
-			1: begin
-					cache_addr <= '1;
-					cache_addr[3:0] <= 0;
-					we_ack <= we_req;
-					state  <= 0;
-				end
-		
-			2: if(DDRAM_DOUT_READY) begin
-					ram_q  <= DDRAM_DOUT;
-					rd_ack <= rd_req;
-					state  <= 3;
-				end
-
-			3: if(DDRAM_DOUT_READY) begin
-					next_q <= DDRAM_DOUT;
-					state  <= 0;
-				end
-		endcase
+	if (!rd_req && wr_req && !wr_pend) begin
+		ram_data <= {4{wr_d}};
+		ram_address <= {wr_a[29:3],3'b000};
+		ram_be   <= ({6'b0,wr_be} << {wr_a[2:1],1'b0});
+		ram_write<=1;
+		ram_burst<=1;
+		wr_pend  <=1;
+		rc_valid <=0;
+		wr_acki  <=0;
+	end else if (rd_req && cache_addr[29:3] == rd_a[29:3] && rc_valid) begin
+		rd_acki <= 1;      
+	end else if (rd_req && rd_pend==2'b00 && (cache_addr[29:3]+1'd1) == rd_a[29:3] && rc_valid) begin
+		rd_acki     <= 1;
+		ram_rq       <= next_rq;
+		cache_addr  <= {rd_a[29:3],3'b000};
+		ram_address <= {rd_a[29:3]+1'd1,3'b000};
+		ram_read    <= 1;
+		ram_be      <= {8{1'b1}};
+		ram_burst   <= 1;
+		rd_pend     <= 1;
+	end else if (rd_req && rd_pend==0) begin
+		ram_address <= {rd_a[29:3],3'b000};
+		ram_be      <= {8{1'b1}};
+		cache_addr  <= {rd_a[29:3],3'b000};
+		ram_read    <= 1;
+		ram_burst   <= 2;
+		rd_pend     <= 2;
+		rc_valid    <= 0;
+	end		
+	if (!DDRAM_BUSY && ram_write) begin
+		  ram_write<=0;
+		  wr_pend<=0;
+   	  wr_acki<=1;
+	end
+	if (!wr_req) wr_acki<=0;
+	if (!rd_req) rd_acki<=0;
+	if (!DDRAM_BUSY && ram_read) ram_read<=0;
+	if (DDRAM_DOUT_READY) begin
+		rd_pend <= rd_pend-1'b1;
+		if (rd_pend == 2'b10) begin 
+			ram_rq  <= DDRAM_DOUT; 
+			rd_acki<=1;
+		end
+		if (rd_pend == 2'b01) begin
+			next_rq <= DDRAM_DOUT;
+			rc_valid<=1;
+		end
 	end
 end
-
 endmodule
